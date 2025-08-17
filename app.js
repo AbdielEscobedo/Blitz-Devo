@@ -1,25 +1,65 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-const { SUPABASE_URL, SUPABASE_ANON_KEY, API_BIBLE_KEY, BIBLE_ID } = window.APP_CONFIG;
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Inicializa Supabase
+const supabase = createClient(
+  window.APP_CONFIG.SUPABASE_URL,
+  window.APP_CONFIG.SUPABASE_ANON_KEY
+);
 
-// --- Versículo del día ---
+// Obtener versículo del día
 async function fetchVerseOfTheDay() {
-  const url = `https://api.scripture.api.bible/v1/bibles/${BIBLE_ID}/versesOfTheDay`;
-  const res = await fetch(url, { headers: { 'api-key': API_BIBLE_KEY } });
-  const json = await res.json();
-  const verse = json.data[0];
-  return { referencia: verse.reference, html: verse.content, version: verse.bibleId || BIBLE_ID };
+  try {
+    const today = new Date();
+    const day = today.getDate();
+    const month = today.getMonth() + 1;
+
+    const verses = [
+      'john 3:16',
+      'psalm 23:1',
+      'romans 8:28',
+      'proverbs 3:5',
+      'philippians 4:13'
+    ];
+
+    const verseOfTheDay = verses[(day + month) % verses.length];
+    const url = `https://bible-api.com/${encodeURIComponent(verseOfTheDay)}?translation=rv1909`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    return {
+      referencia: data.reference,
+      text: data.text
+    };
+  } catch (err) {
+    console.error("Error al cargar el versículo:", err);
+    return null;
+  }
 }
 
+
+// Mostrar versículo
 async function showVerse() {
   const verse = await fetchVerseOfTheDay();
-  document.getElementById('verse-ref').textContent = verse.referencia;
-  document.getElementById('verse-version').textContent = ` · ${verse.version}`;
-  document.getElementById('verse-content').innerHTML = verse.html;
+  if (!verse) {
+    document.getElementById('verse-content').textContent = 'Error al cargar el versículo';
+    return;
+  }
+  
+  const refEl = document.getElementById('verse-ref');
+  const contentEl = document.getElementById('verse-content');
+
+  refEl.textContent = verse.referencia;
+  contentEl.textContent = verse.text;
+
+  refEl.parentElement.style.opacity = 0;
+  setTimeout(() => {
+    refEl.parentElement.style.transition = 'opacity 0.8s';
+    refEl.parentElement.style.opacity = 1;
+  }, 50);
 }
 
-// --- Comentarios ---
+// Cargar comentarios
 async function loadComments() {
   const todayDate = new Date().toISOString().slice(0, 10);
   const { data: comments } = await supabase
@@ -43,25 +83,26 @@ async function loadComments() {
   });
 }
 
-
+// Enviar nuevo comentario
 document.getElementById('comment-submit').addEventListener('click', async () => {
   const input = document.getElementById('comment-input');
   const text = input.value.trim();
   if (!text) return;
 
   const todayDate = new Date().toISOString().slice(0, 10);
-  await supabase.from('comentarios').insert({
-    versiculo_fecha: todayDate,
-    usuario: "Anónimo",
+  await supabase.from('comentarios').insert([{
+    usuario: 'Anon',
     comentario: text,
-    reacciones: {},
-    visible: true
-  });
+    versiculo_fecha: todayDate,
+    visible: true,
+    reacciones: {}
+  }]);
 
   input.value = '';
   loadComments();
 });
 
+// Función de reacciones
 window.react = async function(commentId, type, btn) {
   const { data: comment } = await supabase
     .from('comentarios')
@@ -77,28 +118,12 @@ window.react = async function(commentId, type, btn) {
     .update({ reacciones: reactions })
     .eq('id', commentId);
 
-  // Animación del botón
   btn.classList.add('react-animate');
   setTimeout(() => btn.classList.remove('react-animate'), 300);
 
   loadComments();
 };
 
-
-
-// --- Ocultar histórico semanal ---
-async function hideOldRecords() {
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  const weekAgoISO = weekAgo.toISOString();
-
-  await supabase.from('comentarios').update({ visible: false }).lt('created_at', weekAgoISO);
-}
-
-// --- Inicializar ---
-(async function init() {
-  await hideOldRecords();
-  await showVerse();
-  await loadComments();
-})();
-
+// Inicialización
+showVerse();
+loadComments();
